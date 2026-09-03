@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from SYSTEM.engines.github_engine import GitHubEngine
+from SYSTEM.skills.github_diagnosis import GitHubDiagnosisSkill
 
 
 def github_evidence(repo):
@@ -21,10 +22,14 @@ def github_evidence(repo):
 
 def diagnose(problem, repo):
     access = github_evidence(repo)
-    inspection = GitHubEngine().inspect_repository(repo)
+    skill = GitHubDiagnosisSkill()
+    plan = skill.plan_evidence(problem)
+    inspection = GitHubEngine().inspect_repository(repo, plan["evidence_plan"])
     return {
         "status": "inspection_ready",
         "problem": problem,
+        "problem_type": plan["problem_type"],
+        "evidence_plan": plan["evidence_plan"],
         "findings": [],
         "evidence": access,
         "inspection": inspection,
@@ -32,6 +37,7 @@ def diagnose(problem, repo):
             "executed": True,
             "evidence_based": True,
             "repository_inspected": True,
+            "evidence_plan_applied": True,
         },
     }
 
