@@ -1,8 +1,8 @@
 """GitHub repository inspection engine.
 
 Collects evidence directly from GitHub's public API. The engine does not decide
-whether something is a problem; it gathers the repository evidence that the
-orchestrator/skill can reason about.
+whether something is a problem; it gathers only the evidence selected by the
+active skill.
 """
 from typing import Any, Dict, List
 from urllib.request import Request, urlopen
@@ -39,9 +39,10 @@ class GitHubEngine:
         }
 
     def inspect_repository(self, repository: str, paths: List[str] = None) -> Dict[str, Any]:
-        """Inspect repository structure and selected files without cloning it."""
+        """Inspect repository structure and selected existing paths."""
         base = "https://api.github.com/repos/" + repository
         root = self._get(base + "/contents/")
+        root_paths = {item.get("path") for item in root}
         selected = paths or ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
 
         evidence = {
@@ -51,10 +52,19 @@ class GitHubEngine:
                 for item in root
             ],
             "inspected_paths": [],
+            "skipped_paths": [],
         }
 
         for path in selected:
-            data = self._get(base + "/contents/" + path)
+            if path.split("/")[0] not in root_paths and path not in root_paths:
+                evidence["skipped_paths"].append({"path": path, "reason": "not_present_at_repository_root"})
+                continue
+            try:
+                data = self._get(base + "/contents/" + path)
+            except Exception as exc:
+                evidence["skipped_paths"].append({"path": path, "reason": str(exc)})
+                continue
+
             if isinstance(data, list):
                 evidence["inspected_paths"].append({
                     "path": path,
