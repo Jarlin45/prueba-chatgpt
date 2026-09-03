@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sistema Personal v0.3</title>
-<style>body{font-family:system-ui;max-width:760px;margin:auto;padding:24px}textarea,input,button{width:100%;padding:14px;margin-top:10px;box-sizing:border-box}button{cursor:pointer}.card{padding:16px;border:1px solid #ddd;border-radius:12px;margin-top:16px}.ok{font-weight:600}.warn{font-weight:600}.meta{font-size:.9rem;opacity:.75}</style>
+<title>Sistema Personal v0.4</title>
+<style>body{font-family:system-ui;max-width:760px;margin:auto;padding:24px}textarea,input,button{width:100%;padding:14px;margin-top:10px;box-sizing:border-box}button{cursor:pointer}.card{padding:16px;border:1px solid #ddd;border-radius:12px;margin-top:16px}.ok{font-weight:600}.warn{font-weight:600}.meta{font-size:.9rem;opacity:.75}pre{white-space:pre-wrap;word-break:break-word;background:#f7f7f7;padding:12px;border-radius:8px}</style>
 </head>
 <body>
-<h1>Sistema Personal v0.3</h1>
-<p>Orquestador → Skill → Motor → Evidencia → Verificación</p>
+<h1>Sistema Personal v0.4</h1>
+<p>Orquestador → Skill → Motor → Evidencia → Análisis</p>
 <textarea id="problem" rows="5" placeholder="Describe el problema..."></textarea>
 <input id="repository" value="Jarlin45/prueba-chatgpt" placeholder="owner/repo">
 <button id="run" onclick="diagnose()">Ejecutar diagnóstico real</button>
@@ -17,12 +17,13 @@
 async function diagnose(){
  const p=document.getElementById('problem').value.trim(),repo=document.getElementById('repository').value.trim(),r=document.getElementById('result'),b=document.getElementById('run');
  if(!p){r.textContent='Escribe un problema.';return}
- b.disabled=true;b.textContent='Consultando GitHub...';r.textContent='Ejecutando motor...';
+ b.disabled=true;b.textContent='Analizando evidencia...';r.textContent='Ejecutando Skill → Motor → Evidencia → Análisis...';
  try{
   const res=await fetch('/api/diagnose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({problem:p,repository:repo})});
   const data=await res.json();
   if(!res.ok||data.status==='error')throw new Error(data.error||'Error en diagnóstico');
-  r.innerHTML='<div class="ok">✓ Diagnóstico ejecutado con evidencia real</div><p><b>Repositorio:</b> '+data.evidence.repository+'</p><p><b>Rama:</b> '+data.evidence.default_branch+'</p><p><b>Privado:</b> '+data.evidence.private+'</p><p class="meta">Fuente: '+data.evidence.source+' · Verificación ejecutada: '+data.verification.executed+'</p>';
+  const findings=(data.findings||[]).map(f=>'<li><b>'+f.type+'</b> · '+f.severity+' — '+f.message+'<br><span class="meta">Evidencia: '+(f.evidence||[]).join(', ')+'</span></li>').join('');
+  r.innerHTML='<div class="ok">✓ Análisis ejecutado con evidencia real</div><p><b>Tipo de problema:</b> '+data.problem_type+'</p><p><b>Plan de evidencia:</b> '+data.evidence_plan.join(', ')+'</p><p><b>Repositorio:</b> '+data.evidence.repository+'</p><p><b>Evidencia inspeccionada:</b> '+data.inspection.inspected_paths.map(x=>x.path).join(', ')+'</p><p><b>Evidencia omitida:</b> '+data.inspection.skipped_paths.map(x=>x.path).join(', ')+'</p><h3>Hallazgos</h3><ul>'+findings+'</ul><p class="meta">Análisis: '+data.analysis.analysis_status+' · Causa raíz confirmada: '+data.analysis.root_cause_confirmed+' · Verificación: '+data.verification.evidence_analyzed+'</p>';
  }catch(e){r.innerHTML='<div class="warn">⚠ No se pudo completar</div><p>'+e.message+'</p>'}
  finally{b.disabled=false;b.textContent='Ejecutar diagnóstico real'}
 }
