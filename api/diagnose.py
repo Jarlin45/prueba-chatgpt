@@ -1,6 +1,14 @@
 import json
 from http.server import BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from SYSTEM.engines.github_engine import GitHubEngine
 
 
 def github_evidence(repo):
@@ -12,9 +20,20 @@ def github_evidence(repo):
 
 
 def diagnose(problem, repo):
-    evidence = github_evidence(repo)
-    findings = []
-    return {"status": "no_findings", "problem": problem, "findings": findings, "evidence": evidence, "verification": {"executed": True, "evidence_based": True}}
+    access = github_evidence(repo)
+    inspection = GitHubEngine().inspect_repository(repo)
+    return {
+        "status": "inspection_ready",
+        "problem": problem,
+        "findings": [],
+        "evidence": access,
+        "inspection": inspection,
+        "verification": {
+            "executed": True,
+            "evidence_based": True,
+            "repository_inspected": True,
+        },
+    }
 
 
 class handler(BaseHTTPRequestHandler):
