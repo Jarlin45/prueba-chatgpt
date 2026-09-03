@@ -34,7 +34,18 @@ class GitHubDiagnosisSkill:
         """Return the minimum useful repository evidence for this problem."""
         text = (problem or "").lower()
 
+        # Structural/duplication problems take priority over frontend/API
+        # keywords because the same problem can mention both concepts.
         if any(word in text for word in (
+            "estructura", "ruta", "path", "duplicado", "duplicate",
+            "conflicto", "conflicts", "archivo", "carpeta", "directory",
+            "misma función", "mismo archivo", "copia", "duplicada",
+        )):
+            problem_type = "repository_structure"
+            candidates = [
+                "SYSTEM", "api", "vercel.json", "index.html", "README.md",
+            ]
+        elif any(word in text for word in (
             "vercel", "deploy", "deployment", "despliegue", "build", "runtime",
             "producción", "production", "compila", "compilación",
         )):
@@ -58,12 +69,6 @@ class GitHubDiagnosisSkill:
         )):
             problem_type = "github_access"
             candidates = ["README.md", "SYSTEM", "api"]
-        elif any(word in text for word in (
-            "estructura", "ruta", "path", "duplicado", "duplicate",
-            "conflicto", "archivo", "carpeta", "directory",
-        )):
-            problem_type = "repository_structure"
-            candidates = ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
         else:
             problem_type = "general"
             candidates = ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
