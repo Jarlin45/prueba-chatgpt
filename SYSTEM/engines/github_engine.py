@@ -13,13 +13,7 @@ class GitHubEngine:
     name = "github"
 
     def _get(self, url: str) -> Any:
-        req = Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "personal-system-diagnose",
-            },
-        )
+        req = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "personal-system-diagnose"})
         with urlopen(req, timeout=10) as response:
             return json.load(response)
 
@@ -27,68 +21,41 @@ class GitHubEngine:
         required = ("authenticated", "app_installed", "repository_visible")
         missing = [key for key in required if context.get(key) is not True]
         if missing:
-            return {
-                "ok": False,
-                "severity": "high" if "authenticated" in missing else "medium",
-                "message": "GitHub access is incomplete; missing checks: " + ", ".join(missing),
-            }
-        return {
-            "ok": True,
-            "message": "GitHub authentication, app installation and repository visibility checks passed.",
-            "writable": context.get("writable") is True,
-        }
+            return {"ok": False, "severity": "high" if "authenticated" in missing else "medium", "message": "GitHub access is incomplete; missing checks: " + ", ".join(missing)}
+        return {"ok": True, "message": "GitHub authentication, app installation and repository visibility checks passed.", "writable": context.get("writable") is True}
 
     def inspect_repository(self, repository: str, paths: List[str] = None, recursive: bool = False) -> Dict[str, Any]:
-        """Inspect repository structure and selected existing paths.
-
-        A path beginning with ``__FILE_SEARCH__:`` requests a recursive filename
-        search. This allows the skill to distinguish an explicit file-existence
-        request from a generic structural inspection.
-        """
+        """Inspect only the evidence selected by the active skill."""
         base = "https://api.github.com/repos/" + repository
         root = self._get(base + "/contents/")
         root_paths = {item.get("path") for item in root}
         selected = paths or ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
-
         evidence = {
             "repository": repository,
-            "root_entries": [
-                {"name": item.get("name"), "path": item.get("path"), "type": item.get("type")}
-                for item in root
-            ],
+            "root_entries": [{"name": item.get("name"), "path": item.get("path"), "type": item.get("type")} for item in root],
             "inspected_paths": [],
             "skipped_paths": [],
+            "requested_evidence": list(selected),
         }
-
         visited = set()
 
         def inspect_path(path: str, allow_recursive: bool = False) -> None:
             if path in visited:
                 return
             visited.add(path)
-
             try:
                 data = self._get(base + "/contents/" + path)
             except Exception as exc:
                 evidence["skipped_paths"].append({"path": path, "reason": str(exc)})
                 return
-
             if isinstance(data, list):
-                evidence["inspected_paths"].append({
-                    "path": path,
-                    "type": "directory",
-                    "entries": [
-                        {"name": item.get("name"), "path": item.get("path"), "type": item.get("type")}
-                        for item in data
-                    ],
-                })
+                evidence["inspected_paths"].append({"path": path, "type": "directory", "entries": [{"name": item.get("name"), "path": item.get("path"), "type": item.get("type")} for item in data]})
                 if allow_recursive:
                     for item in data:
                         child = item.get("path")
                         if child:
                             inspect_path(child, allow_recursive=True)
                 return
-
             content = data.get("content", "")
             if data.get("encoding") == "base64":
                 import base64
@@ -96,18 +63,19 @@ class GitHubEngine:
                     content = base64.b64decode(content).decode("utf-8")
                 except Exception:
                     content = ""
-            evidence["inspected_paths"].append({
-                "path": path,
-                "type": "file",
-                "size": data.get("size"),
-                "sha": data.get("sha"),
-                "content": content,
-            })
+            evidence["inspected_paths"].append({"path": path, "type": "file", "size": data.get("size"), "sha": data.get("sha"), "content": content})
 
-        def search_filename(filename: str) -> None:
-            """Search every reachable repository directory for an exact basename."""
+        def search_filename(requested: str) -> None:
+            # A repository-relative path is an exact target. Do not broaden it
+            # to a basename search, which could inspect unrelated duplicates.
+            if "/" in requested:
+                if requested.split("/", 1)[0] in root_paths:
+                    inspect_path(requested)
+                else:
+                    evidence["skipped_paths"].append({"path": requested, "reason": "file_not_found"})
+                return
+
             matches = []
-
             def walk(path: str = "") -> None:
                 try:
                     data = root if path == "" else self._get(base + "/contents/" + path)
@@ -115,27 +83,20 @@ class GitHubEngine:
                     if path:
                         evidence["skipped_paths"].append({"path": path, "reason": str(exc)})
                     return
-
                 if not isinstance(data, list):
                     return
-
                 for item in data:
-                    child = item.get("path")
-                    name = item.get("name")
+                    child, name = item.get("path"), item.get("name")
                     if not child:
                         continue
-                    if item.get("type") == "file" and name == filename:
+                    if item.get("type") == "file" and name == requested:
                         inspect_path(child)
                         matches.append(child)
                     elif item.get("type") == "dir":
                         walk(child)
-
             walk()
             if not matches:
-                evidence["skipped_paths"].append({
-                    "path": filename,
-                    "reason": "file_not_found",
-                })
+                evidence["skipped_paths"].append({"path": requested, "reason": "file_not_found"})
 
         for path in selected:
             if path.startswith("__FILE_SEARCH__:"):
@@ -145,5 +106,4 @@ class GitHubEngine:
                 evidence["skipped_paths"].append({"path": path, "reason": "not_present_at_repository_root"})
                 continue
             inspect_path(path, allow_recursive=recursive)
-
         return evidence
