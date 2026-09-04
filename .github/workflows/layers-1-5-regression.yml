@@ -1,0 +1,19 @@
+name: Layers 1-5 Regression
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run layers 1-5 tests
+        run: python -m unittest discover -s SYSTEM/tests -p 'test_*.py' -v
