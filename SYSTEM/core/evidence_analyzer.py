@@ -25,14 +25,31 @@ class EvidenceAnalyzer:
 
         findings: List[Dict[str, Any]] = []
 
-        # Detect duplicate filenames across inspected directories. A duplicate
-        # is not automatically a runtime conflict: relevance of each path is
-        # evaluated before assigning severity.
         by_name = defaultdict(list)
         for path, item in files.items():
             by_name[path.rsplit("/", 1)[-1]].append(item)
 
-        if problem_type == "repository_structure":
+        if problem_type == "repository_file":
+            requested = self._requested_filename(inspection)
+            matches = [path for path in files if path.rsplit("/", 1)[-1] == requested] if requested else list(files)
+            if matches:
+                findings.append({
+                    "type": "evidence",
+                    "severity": "info",
+                    "message": f"Se encontró el archivo solicitado {requested}; su contenido está disponible para análisis." if requested else "Se encontró el archivo solicitado; su contenido está disponible para análisis.",
+                    "evidence": matches,
+                })
+            else:
+                skipped = [item for item in inspection.get("skipped_paths", []) if item.get("reason") == "file_not_found"]
+                requested_name = requested or (skipped[0].get("path") if skipped else "archivo solicitado")
+                findings.append({
+                    "type": "evidence_gap",
+                    "severity": "info",
+                    "message": f"No se encontró el archivo solicitado {requested_name} en el repositorio; no es posible analizar su contenido.",
+                    "evidence": [requested_name],
+                })
+
+        elif problem_type == "repository_structure":
             for filename, items in by_name.items():
                 if len(items) < 2:
                     continue
@@ -93,7 +110,9 @@ class EvidenceAnalyzer:
             })
 
         skipped = inspection.get("skipped_paths", [])
-        if skipped:
+        # Do not add a second generic gap for explicit filename searches: the
+        # repository_file branch already explains the missing requested file.
+        if skipped and problem_type != "repository_file":
             findings.append({
                 "type": "evidence_gap", "severity": "info",
                 "message": "Algunas evidencias solicitadas no estaban disponibles y fueron marcadas como omitidas.",
@@ -108,6 +127,18 @@ class EvidenceAnalyzer:
             "root_cause_confirmed": False,
             "analysis_status": "evidence_interpreted",
         }
+
+    @staticmethod
+    def _requested_filename(inspection: Dict[str, Any]):
+        for item in inspection.get("skipped_paths", []):
+            if item.get("reason") == "file_not_found":
+                return item.get("path")
+        for item in inspection.get("root_entries", []):
+            # No special marker is stored in root entries; this branch is only
+            # a safe fallback when an exact requested file was found at root.
+            if item.get("type") == "file":
+                return item.get("name")
+        return None
 
     def _duplicate_finding(self, filename: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         paths = [item.get("path") for item in items]
@@ -143,11 +174,6 @@ class EvidenceAnalyzer:
         }
 
     def _path_relevance(self, path: str, filename: str) -> str:
-        """Estimate whether a path is likely to participate in execution.
-
-        This is deliberately conservative: it is a structural signal, not a
-        claim about the deployment platform's actual routing behavior.
-        """
         if path == filename:
             return "high"
         if path.startswith("api/"):
