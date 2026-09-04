@@ -32,25 +32,13 @@ class GitHubDiagnosisSkill:
         text = (problem or "").lower()
         filename = self._extract_requested_filename(problem or "")
 
-        # Preserve an explicitly requested path. Only a bare filename is
-        # searched recursively; a path such as api/diagnose.py is exact.
-        if filename and any(term in text for term in (
-            "existe", "existencia", "buscar", "busca", "comprobar", "comprueba",
-            "comprobar si", "analizar su contenido", "analiza su contenido",
-            "contenido",
-        )):
-            problem_type = "repository_file"
-            candidates = ["__FILE_SEARCH__:" + filename]
-        elif any(word in text for word in (
-            "estructura", "ruta", "path", "duplicado", "duplicate",
-            "conflicto", "conflicts", "archivo", "carpeta", "directory",
-            "misma función", "mismo archivo", "copia", "duplicada",
-        )):
-            problem_type = "repository_structure"
-            candidates = ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
-        elif any(word in text for word in (
+        # Domain-specific intent must win over a generic request to inspect a
+        # file. This prevents prompts about Vercel/runtime from being reduced
+        # to repository_file just because they mention `vercel.json`.
+        if any(word in text for word in (
             "vercel", "deploy", "deployment", "despliegue", "build", "runtime",
             "producción", "production", "compila", "compilación",
+            "configuración de vercel", "configuracion de vercel",
         )):
             problem_type = "deployment"
             candidates = [
@@ -66,6 +54,20 @@ class GitHubDiagnosisSkill:
                 "index.html", "api/diagnose.py", "SYSTEM/web/index.html",
                 "SYSTEM/api/diagnose.py",
             ]
+        elif filename and any(term in text for term in (
+            "existe", "existencia", "buscar", "busca", "comprobar", "comprueba",
+            "comprobar si", "analizar su contenido", "analiza su contenido",
+            "contenido",
+        )):
+            problem_type = "repository_file"
+            candidates = ["__FILE_SEARCH__:" + filename]
+        elif any(word in text for word in (
+            "estructura", "ruta", "path", "duplicado", "duplicate",
+            "conflicto", "conflicts", "archivo", "carpeta", "directory",
+            "misma función", "mismo archivo", "copia", "duplicada",
+        )):
+            problem_type = "repository_structure"
+            candidates = ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
         elif any(word in text for word in (
             "github", "repositorio", "repo", "permiso", "permission",
             "autenticación", "authentication", "acceso", "access",
