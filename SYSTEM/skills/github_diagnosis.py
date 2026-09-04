@@ -12,19 +12,15 @@ class GitHubDiagnosisSkill:
     def diagnose(self, problem, engines):
         if "github" not in problem.description.lower():
             return []
-
         engine = engines.get("github")
         if engine is None:
             return []
-
         check = getattr(engine, "check_access", None)
         if check is None:
             return []
-
         result = check(problem.context)
         if result.get("ok"):
             return []
-
         return [{
             "source": self.name,
             "severity": result.get("severity", "medium"),
@@ -34,11 +30,10 @@ class GitHubDiagnosisSkill:
     def plan_evidence(self, problem):
         """Return the minimum useful repository evidence for this problem."""
         text = (problem or "").lower()
-
-        # Explicit file-existence/content requests take priority over generic
-        # structural keywords such as "archivo". The engine receives a special
-        # filename-search marker so it can search the repository recursively.
         filename = self._extract_requested_filename(problem or "")
+
+        # Preserve an explicitly requested path. Only a bare filename is
+        # searched recursively; a path such as api/diagnose.py is exact.
         if filename and any(term in text for term in (
             "existe", "existencia", "buscar", "busca", "comprobar", "comprueba",
             "comprobar si", "analizar su contenido", "analiza su contenido",
@@ -46,17 +41,13 @@ class GitHubDiagnosisSkill:
         )):
             problem_type = "repository_file"
             candidates = ["__FILE_SEARCH__:" + filename]
-        # Structural/duplication problems take priority over frontend/API
-        # keywords because the same problem can mention both concepts.
         elif any(word in text for word in (
             "estructura", "ruta", "path", "duplicado", "duplicate",
             "conflicto", "conflicts", "archivo", "carpeta", "directory",
             "misma función", "mismo archivo", "copia", "duplicada",
         )):
             problem_type = "repository_structure"
-            candidates = [
-                "SYSTEM", "api", "vercel.json", "index.html", "README.md",
-            ]
+            candidates = ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
         elif any(word in text for word in (
             "vercel", "deploy", "deployment", "despliegue", "build", "runtime",
             "producción", "production", "compila", "compilación",
@@ -93,13 +84,13 @@ class GitHubDiagnosisSkill:
 
     @staticmethod
     def _extract_requested_filename(problem):
-        """Extract a concrete filename from an explicit repository-file request."""
+        """Extract a concrete filename or repository-relative file path."""
         patterns = (
             r"`([^`]+\.[A-Za-z0-9_-]+)`",
-            r"\b([A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|json|html|css|md|txt|yml|yaml|toml|sql|env))\b",
+            r"\b((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|json|html|css|md|txt|yml|yaml|toml|sql|env))\b",
         )
         for pattern in patterns:
             match = re.search(pattern, problem)
             if match:
-                return match.group(1).strip()
+                return match.group(1).strip().lstrip("/")
         return None
