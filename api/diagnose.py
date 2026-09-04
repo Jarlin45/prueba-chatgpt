@@ -25,7 +25,7 @@ def diagnose(problem, repo):
     access = github_evidence(repo)
     skill = GitHubDiagnosisSkill()
     plan = skill.plan_evidence(problem)
-    recursive = plan["problem_type"] == "repository_structure"
+    recursive = plan["problem_type"] in ("repository_structure", "repository_file")
     inspection = GitHubEngine().inspect_repository(repo, plan["evidence_plan"], recursive=recursive)
     analysis = EvidenceAnalyzer().analyze(problem, plan["problem_type"], inspection)
     return {
