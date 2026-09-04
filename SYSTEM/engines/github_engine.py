@@ -41,8 +41,9 @@ class GitHubEngine:
     def inspect_repository(self, repository: str, paths: List[str] = None, recursive: bool = False) -> Dict[str, Any]:
         """Inspect repository structure and selected existing paths.
 
-        When recursive is enabled, selected directories are traversed so that
-        structural analysis can inspect the actual files inside them.
+        A path beginning with ``__FILE_SEARCH__:`` requests a recursive filename
+        search. This allows the skill to distinguish an explicit file-existence
+        request from a generic structural inspection.
         """
         base = "https://api.github.com/repos/" + repository
         root = self._get(base + "/contents/")
@@ -103,7 +104,43 @@ class GitHubEngine:
                 "content": content,
             })
 
+        def search_filename(filename: str) -> None:
+            """Search every reachable repository directory for an exact basename."""
+            matches = []
+
+            def walk(path: str = "") -> None:
+                try:
+                    data = root if path == "" else self._get(base + "/contents/" + path)
+                except Exception as exc:
+                    if path:
+                        evidence["skipped_paths"].append({"path": path, "reason": str(exc)})
+                    return
+
+                if not isinstance(data, list):
+                    return
+
+                for item in data:
+                    child = item.get("path")
+                    name = item.get("name")
+                    if not child:
+                        continue
+                    if item.get("type") == "file" and name == filename:
+                        inspect_path(child)
+                        matches.append(child)
+                    elif item.get("type") == "dir":
+                        walk(child)
+
+            walk()
+            if not matches:
+                evidence["skipped_paths"].append({
+                    "path": filename,
+                    "reason": "file_not_found",
+                })
+
         for path in selected:
+            if path.startswith("__FILE_SEARCH__:"):
+                search_filename(path.split(":", 1)[1])
+                continue
             if path.split("/")[0] not in root_paths and path not in root_paths:
                 evidence["skipped_paths"].append({"path": path, "reason": "not_present_at_repository_root"})
                 continue
