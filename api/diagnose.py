@@ -25,7 +25,8 @@ def diagnose(problem, repo):
     access = github_evidence(repo)
     skill = GitHubDiagnosisSkill()
     plan = skill.plan_evidence(problem)
-    inspection = GitHubEngine().inspect_repository(repo, plan["evidence_plan"])
+    recursive = plan["problem_type"] == "repository_structure"
+    inspection = GitHubEngine().inspect_repository(repo, plan["evidence_plan"], recursive=recursive)
     analysis = EvidenceAnalyzer().analyze(problem, plan["problem_type"], inspection)
     return {
         "status": "analysis_ready",
@@ -65,5 +66,6 @@ class handler(BaseHTTPRequestHandler):
             body = json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False).encode()
             self.send_response(400)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
