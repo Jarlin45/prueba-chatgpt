@@ -38,8 +38,12 @@ class GitHubEngine:
             "writable": context.get("writable") is True,
         }
 
-    def inspect_repository(self, repository: str, paths: List[str] = None) -> Dict[str, Any]:
-        """Inspect repository structure and selected existing paths."""
+    def inspect_repository(self, repository: str, paths: List[str] = None, recursive: bool = False) -> Dict[str, Any]:
+        """Inspect repository structure and selected existing paths.
+
+        When recursive is enabled, selected directories are traversed so that
+        structural analysis can inspect the actual files inside them.
+        """
         base = "https://api.github.com/repos/" + repository
         root = self._get(base + "/contents/")
         root_paths = {item.get("path") for item in root}
@@ -55,15 +59,18 @@ class GitHubEngine:
             "skipped_paths": [],
         }
 
-        for path in selected:
-            if path.split("/")[0] not in root_paths and path not in root_paths:
-                evidence["skipped_paths"].append({"path": path, "reason": "not_present_at_repository_root"})
-                continue
+        visited = set()
+
+        def inspect_path(path: str, allow_recursive: bool = False) -> None:
+            if path in visited:
+                return
+            visited.add(path)
+
             try:
                 data = self._get(base + "/contents/" + path)
             except Exception as exc:
                 evidence["skipped_paths"].append({"path": path, "reason": str(exc)})
-                continue
+                return
 
             if isinstance(data, list):
                 evidence["inspected_paths"].append({
@@ -74,20 +81,32 @@ class GitHubEngine:
                         for item in data
                     ],
                 })
-            else:
-                content = data.get("content", "")
-                if data.get("encoding") == "base64":
-                    import base64
-                    try:
-                        content = base64.b64decode(content).decode("utf-8")
-                    except Exception:
-                        content = ""
-                evidence["inspected_paths"].append({
-                    "path": path,
-                    "type": "file",
-                    "size": data.get("size"),
-                    "sha": data.get("sha"),
-                    "content": content,
-                })
+                if allow_recursive:
+                    for item in data:
+                        child = item.get("path")
+                        if child:
+                            inspect_path(child, allow_recursive=True)
+                return
+
+            content = data.get("content", "")
+            if data.get("encoding") == "base64":
+                import base64
+                try:
+                    content = base64.b64decode(content).decode("utf-8")
+                except Exception:
+                    content = ""
+            evidence["inspected_paths"].append({
+                "path": path,
+                "type": "file",
+                "size": data.get("size"),
+                "sha": data.get("sha"),
+                "content": content,
+            })
+
+        for path in selected:
+            if path.split("/")[0] not in root_paths and path not in root_paths:
+                evidence["skipped_paths"].append({"path": path, "reason": "not_present_at_repository_root"})
+                continue
+            inspect_path(path, allow_recursive=recursive)
 
         return evidence
