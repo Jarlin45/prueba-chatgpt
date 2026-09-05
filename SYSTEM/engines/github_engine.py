@@ -27,16 +27,33 @@ class GitHubEngine:
     def inspect_repository(self, repository: str, paths: List[str] = None, recursive: bool = False) -> Dict[str, Any]:
         """Inspect only the evidence selected by the active skill."""
         base = "https://api.github.com/repos/" + repository
-        root = self._get(base + "/contents/")
-        root_paths = {item.get("path") for item in root}
         selected = paths or ["SYSTEM", "api", "vercel.json", "index.html", "README.md"]
         evidence = {
             "repository": repository,
-            "root_entries": [{"name": item.get("name"), "path": item.get("path"), "type": item.get("type")} for item in root],
+            "root_entries": [],
             "inspected_paths": [],
             "skipped_paths": [],
             "requested_evidence": list(selected),
+            "repository_state": {"empty": False, "root_inspectable": True},
         }
+
+        # GitHub's contents endpoint returns an error for a repository with no
+        # commit/tree. Preserve that state explicitly instead of manufacturing
+        # file evidence or interpreting a failed lookup as a successful read.
+        try:
+            root = self._get(base + "/contents/")
+        except Exception as exc:
+            evidence["repository_state"] = {
+                "empty": True,
+                "root_inspectable": False,
+                "reason": str(exc),
+            }
+            for path in selected:
+                evidence["skipped_paths"].append({"path": path, "reason": "repository_empty_or_uninspectable"})
+            return evidence
+
+        root_paths = {item.get("path") for item in root}
+        evidence["root_entries"] = [{"name": item.get("name"), "path": item.get("path"), "type": item.get("type")} for item in root]
         visited = set()
 
         def inspect_path(path: str, allow_recursive: bool = False) -> None:

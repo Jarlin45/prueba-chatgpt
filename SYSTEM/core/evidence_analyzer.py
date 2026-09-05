@@ -20,6 +20,24 @@ class EvidenceAnalyzer:
         for path, item in files.items():
             by_name[path.rsplit("/", 1)[-1]].append(item)
 
+        repository_state = inspection.get("repository_state") or {}
+        if repository_state.get("empty") and not repository_state.get("root_inspectable", True):
+            findings.append({
+                "type": "repository_state",
+                "severity": "warning",
+                "message": "El repositorio existe, pero no hay un árbol de archivos/commit inicial que pueda inspeccionarse. No se debe afirmar que se leyó ningún archivo ni que se ejecutó una operación de escritura.",
+                "evidence": ["repository_state"],
+                "signals": {"empty": True, "root_inspectable": False},
+            })
+            return {
+                "analyzer": self.name,
+                "problem_type": problem_type,
+                "finding_count": len(findings),
+                "findings": findings,
+                "root_cause_confirmed": False,
+                "analysis_status": "evidence_interpreted",
+            }
+
         if problem_type == "repository_file":
             requested = self._requested_file(inspection)
             if requested and "/" in requested:
@@ -59,9 +77,6 @@ class EvidenceAnalyzer:
         else:
             findings.append({"type": "evidence", "severity": "info", "message": "Se obtuvo evidencia inicial de la estructura y archivos seleccionados.", "evidence": list(files.keys()) + list(directories.keys())})
 
-        # For a repository-file request, only the requested target is allowed
-        # to produce an evidence gap. This prevents stale/unrelated omissions
-        # from contaminating the current analysis.
         skipped = inspection.get("skipped_paths", [])
         if skipped and problem_type != "repository_file":
             findings.append({"type": "evidence_gap", "severity": "info", "message": "Algunas evidencias solicitadas no estaban disponibles y fueron marcadas como omitidas.", "evidence": [item.get("path") for item in skipped]})
